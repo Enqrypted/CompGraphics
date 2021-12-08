@@ -2,10 +2,18 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(MeshFilter))]
+[RequireComponent(typeof(MeshRenderer))]
+
 public class Maze : MonoBehaviour
 {
 
+    public MeshGenerator meshGenerator = new MeshGenerator(1);
+    
+
     public float wallLength = 1f;
+
+
 
     [System.Serializable]
     public class Cell{
@@ -22,32 +30,36 @@ public class Maze : MonoBehaviour
         public Vector3 topRight;
         public Vector3 bottomLeft;
         public Vector3 bottomRight;
-        public bool disabled;
+        public bool disabled = false;
+        public bool horizontal = false;
 
-        public Wall(Vector3 midPoint, bool isHorizontal, float wallLength) {
+        public Wall(Vector3 midPoint, bool isHorizontal, float wallLength, float wallThickness) {
             float sideSize = wallLength / 2;
+
+            horizontal = isHorizontal;
             if (isHorizontal)
             {
-                topLeft = midPoint + new Vector3(0, sideSize, -sideSize);
-                topRight = midPoint + new Vector3(0, sideSize, sideSize);
-                bottomLeft = midPoint + new Vector3(0, -sideSize, -sideSize);
-                bottomRight = midPoint + new Vector3(0, -sideSize, sideSize);
+                topLeft = midPoint + new Vector3(0, sideSize, -(sideSize + (wallThickness/2)));
+                topRight = midPoint + new Vector3(0, sideSize, (sideSize + (wallThickness / 2)));
+                bottomLeft = midPoint + new Vector3(0, -sideSize, -(sideSize + (wallThickness / 2)));
+                bottomRight = midPoint + new Vector3(0, -sideSize, (sideSize + (wallThickness / 2)));
             }
             else {
-                topLeft = midPoint + new Vector3(-sideSize, sideSize, 0);
-                topRight = midPoint + new Vector3(sideSize, sideSize, 0);
-                bottomLeft = midPoint + new Vector3(-sideSize, -sideSize, 0);
-                bottomRight = midPoint + new Vector3(sideSize, -sideSize, 0);
+                topLeft = midPoint + new Vector3(-(sideSize + (wallThickness / 2)), sideSize, 0);
+                topRight = midPoint + new Vector3((sideSize + (wallThickness / 2)), sideSize, 0);
+                bottomLeft = midPoint + new Vector3(-(sideSize + (wallThickness / 2)), -sideSize, 0);
+                bottomRight = midPoint + new Vector3((sideSize + (wallThickness / 2)), -sideSize, 0);
             }
         }
 
 
     }
 
-    
 
-    public int xSize = 5;
-    public int ySize = 5;
+    public int mazeSize;
+    private int xSize;
+    private int ySize;
+    public float wallThickness = .25f;
 
     private Vector3 initialPos;
     private List<Wall> wallHolder = new List<Wall>();
@@ -61,15 +73,146 @@ public class Maze : MonoBehaviour
     private int backingUp = 0;
     private int wallToBreak = 0;
 
+    public GameObject startObject;
+    public GameObject endObject;
+    
+
     // Start is called before the first frame update
     void Start()
     {
+        ySize = mazeSize;
+        xSize = mazeSize;
+
+        //create the maze walls in a list and generate the maze using depth-first search algorithm
         CreateWalls();
 
-        foreach (Wall wall in wallHolder) {
-            print(wall.disabled + " " + wall.topLeft);
+        //Create the mesh of the walls
+        GenerateWallMesh();
+
+        //add collider to maze
+        gameObject.AddComponent<MeshCollider>().sharedMesh = GetComponent<MeshFilter>().mesh;
+
+        //calculate the origin cell position (the position of the cell at 0,0)
+        Vector3 origin = new Vector3(2.5f - (ySize * .5f), 1, 0 - (xSize * .5f));
+
+        //calculate the random start cell position
+        Vector3 startPos = origin + new Vector3(wallLength * (Random.Range(1, xSize) - 1), 0, wallLength * (ySize - 1));
+
+        //instantiate the start cube
+        GameObject startCube = new GameObject();
+        Cube cube = startCube.AddComponent<Cube>();
+        cube.color = new Color(.5f, .5f, 1f);
+        cube.Generate(); //call the generate method that creates the cube mesh
+        startCube.transform.position = startPos;
+        startCube.name = "start";
+
+        //calculate the random end cell position
+        Vector3 endPos = origin + new Vector3(wallLength * (Random.Range(1, xSize) - 1), 0, 0);
+
+        //instantiate the finish cube
+        GameObject endCube = new GameObject();
+        cube = endCube.AddComponent<Cube>();
+        cube.color = new Color(.5f, 1f, .5f);
+        cube.Generate();
+        endCube.transform.position = endPos;
+        endCube.name = "finish";
+
+        Material mat = new Material(Shader.Find("Standard"));
+        mat.color = new Color(.8f,1f,1f);
+        gameObject.GetComponent<MeshRenderer>().material = mat;
+
+        //create the floor
+        GameObject floorPlane = new GameObject();
+        cube = floorPlane.AddComponent<Cube>();
+        cube.cubeSize = new Vector3(mazeSize*wallLength, .1f, mazeSize*wallLength);
+        floorPlane.transform.position = origin + new Vector3((wallLength * (xSize / 2 - 1) + (wallLength/2f)), -1f, (wallLength * (xSize / 2 - 1) + (wallLength / 2f)));
+        cube.color = new Color(.5f, .5f, 0.2f);
+        cube.Generate();
+        floorPlane.AddComponent<BoxCollider>();
+
+
+        //finally, create the player
+        CreatePlayer(startPos);
+
+    }
+
+    void CreatePlayer(Vector3 startPos) {
+        GameObject playerCube = new GameObject();
+        Cube cube = playerCube.AddComponent<Cube>();
+        cube.cubeSize = new Vector3(1, 1.5f, 1);
+        cube.color = new Color(1f, 1f, .5f);
+        cube.Generate();
+        playerCube.transform.position = startPos;
+        playerCube.name = "player";
+
+        playerCube.AddComponent<playerController>();
+    }
+
+    void GenerateWallMesh() {
+        //for each wall that is still enabled, draw the wall by creating the polygons for each side
+        foreach (Wall wall in wallHolder)
+        {
+            if (wall.disabled == false)
+            {
+
+                Vector3 thicknessOffset;
+
+
+                if (wall.horizontal)
+                {
+
+                    thicknessOffset = new Vector3(wallThickness / 2f, 0, 0);
+
+                    //wall back
+                    meshGenerator.CreateTriangle(wall.topLeft + thicknessOffset, wall.topRight + thicknessOffset, wall.bottomRight + thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.bottomRight + thicknessOffset, wall.bottomLeft + thicknessOffset, wall.topLeft + thicknessOffset, 0);
+
+                    //wall front
+                    meshGenerator.CreateTriangle(wall.bottomRight - thicknessOffset, wall.topRight - thicknessOffset, wall.topLeft - thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.topLeft - thicknessOffset, wall.bottomLeft - thicknessOffset, wall.bottomRight - thicknessOffset, 0);
+
+                    //wall top
+                    meshGenerator.CreateTriangle(wall.topLeft - thicknessOffset, wall.topRight - thicknessOffset, wall.topRight + thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.topRight + thicknessOffset, wall.topLeft + thicknessOffset, wall.topLeft - thicknessOffset, 0);
+
+                    //wall left
+                    meshGenerator.CreateTriangle(wall.topLeft - thicknessOffset, wall.topLeft + thicknessOffset, wall.bottomLeft + thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.bottomLeft + thicknessOffset, wall.bottomLeft - thicknessOffset, wall.topLeft - thicknessOffset, 0);
+
+                    //wall right
+                    meshGenerator.CreateTriangle(wall.topRight + thicknessOffset, wall.topRight - thicknessOffset, wall.bottomRight - thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.bottomRight - thicknessOffset, wall.bottomRight + thicknessOffset, wall.topRight + thicknessOffset, 0);
+                }
+                else
+                {
+
+                    thicknessOffset = new Vector3(0, 0, wallThickness / 2f);
+
+                    //wall front
+                    meshGenerator.CreateTriangle(wall.topLeft - thicknessOffset, wall.topRight - thicknessOffset, wall.bottomRight - thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.bottomRight - thicknessOffset, wall.bottomLeft - thicknessOffset, wall.topLeft - thicknessOffset, 0);
+
+                    //wall back
+                    meshGenerator.CreateTriangle(wall.bottomRight + thicknessOffset, wall.topRight + thicknessOffset, wall.topLeft + thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.topLeft + thicknessOffset, wall.bottomLeft + thicknessOffset, wall.bottomRight + thicknessOffset, 0);
+
+                    //wall top
+                    meshGenerator.CreateTriangle(wall.topLeft + thicknessOffset, wall.topRight + thicknessOffset, wall.topRight - thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.topRight - thicknessOffset, wall.topLeft - thicknessOffset, wall.topLeft + thicknessOffset, 0);
+
+                    //wall left
+                    meshGenerator.CreateTriangle(wall.topLeft + thicknessOffset, wall.topLeft - thicknessOffset, wall.bottomLeft - thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.bottomLeft - thicknessOffset, wall.bottomLeft + thicknessOffset, wall.topLeft + thicknessOffset, 0);
+
+                    //wall right
+                    meshGenerator.CreateTriangle(wall.topRight - thicknessOffset, wall.topRight + thicknessOffset, wall.bottomRight + thicknessOffset, 0);
+                    meshGenerator.CreateTriangle(wall.bottomRight + thicknessOffset, wall.bottomRight - thicknessOffset, wall.topRight - thicknessOffset, 0);
+                }
+            }
         }
 
+        //set the mesh property to the generated wall mesh
+        gameObject.GetComponent<MeshFilter>().mesh = meshGenerator.CreateMesh();
     }
 
     void CreateWalls() {
@@ -79,23 +222,23 @@ public class Maze : MonoBehaviour
         Vector3 myPos = initialPos;
         Wall tempWall;
 
-        //vertical walls
+        //horizontal walls
         for (int i = 0; i < ySize; i++) {
             for (int j = 0; j <= xSize; j++) {
                 myPos = new Vector3(initialPos.x + (j*wallLength)-wallLength/2, 0, initialPos.z + (i * wallLength) - wallLength/2);
-                tempWall = new Wall(myPos, true, wallLength);
+                tempWall = new Wall(myPos, true, wallLength, wallThickness);
                 // isHorizontal true
                 wallHolder.Add(tempWall);
             }
         }
 
-        //horizontal walls
+        //vertical walls
         for (int i = 0; i <= ySize; i++)
         {
             for (int j = 0; j < xSize; j++)
             {
                 myPos = new Vector3(initialPos.x + (j * wallLength), 0, initialPos.z + (i * wallLength) - wallLength);
-                tempWall = new Wall(myPos, false, wallLength);
+                tempWall = new Wall(myPos, false, wallLength, wallThickness);
                 // isHorizontal false
                 wallHolder.Add(tempWall);
             }
@@ -112,12 +255,12 @@ public class Maze : MonoBehaviour
         totalCells = xSize * ySize;
         List<Wall> allWalls;
         int children = wallHolder.Count;
-        print(children);
         allWalls = new List<Wall>();
         cells = new Cell[xSize * ySize];
         int eastWestProcess = 0;
         int childProcess = 0;
         int termCount = 0;
+
 
         for (int i = 0; i < children; i++) {
             allWalls.Add(wallHolder[i]);
@@ -140,27 +283,32 @@ public class Maze : MonoBehaviour
             childProcess++;
             cells[cellprocess].west = allWalls[eastWestProcess];
             cells[cellprocess].north = allWalls[(childProcess + (xSize + 1) * ySize) + ySize - 1];
-
         }
         CreateMaze();
     }
 
     void CreateMaze() {
-        if (visitedCells < totalCells) {
-            if (startedBuilding) {
+        if (visitedCells < totalCells)
+        {
+            if (startedBuilding)
+            {
                 GetNeighbour();
-                if (cells[currentNeighbour].visited == false && cells[currentCell].visited == true) {
+                if (cells[currentNeighbour].visited == false && cells[currentCell].visited == true)
+                {
                     BreakWall();
                     cells[currentNeighbour].visited = true;
                     visitedCells++;
                     lastCells.Add(currentCell);
                     currentCell = currentNeighbour;
-                    if (lastCells.Count > 0) {
+                    if (lastCells.Count > 0)
+                    {
                         backingUp = lastCells.Count - 1;
                     }
                 }
-            } else{
-                currentCell = Random.Range(0, totalCells);
+            }
+            else
+            {
+                currentCell = 0;
                 cells[currentCell].visited = true;
                 visitedCells++;
                 startedBuilding = true;
