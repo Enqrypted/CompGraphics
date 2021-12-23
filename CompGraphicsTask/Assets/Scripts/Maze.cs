@@ -13,6 +13,7 @@ public class Maze : MonoBehaviour
 
     public float wallLength = 1f;
 
+    public GameObject FinishText, StartText;
 
 
     [System.Serializable]
@@ -101,9 +102,12 @@ public class Maze : MonoBehaviour
         //instantiate the start cube
         GameObject startCube = new GameObject();
         Cube cube = startCube.AddComponent<Cube>();
+        
         cube.color = new Color(.5f, .5f, 1f);
         cube.Generate(); //call the generate method that creates the cube mesh
         startCube.transform.position = startPos;
+        startCube.AddComponent<HoverEffect>();
+        startCube.AddComponent<BoxCollider>();
         startCube.name = "start";
 
         //calculate the random end cell position
@@ -112,9 +116,17 @@ public class Maze : MonoBehaviour
         //instantiate the finish cube
         GameObject endCube = new GameObject();
         cube = endCube.AddComponent<Cube>();
+        
         cube.color = new Color(.5f, 1f, .5f);
         cube.Generate();
         endCube.transform.position = endPos;
+        endCube.AddComponent<HoverEffect>();
+        endCube.AddComponent<BoxCollider>().isTrigger = true;
+
+        FinishScript finishScript = endCube.AddComponent<FinishScript>();
+        finishScript.StartText = StartText;
+        finishScript.FinishText = FinishText;
+
         endCube.name = "finish";
 
         Material mat = new Material(Shader.Find("Standard"));
