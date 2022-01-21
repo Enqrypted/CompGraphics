@@ -59,3 +59,7 @@ sysinfo.txt
 crashlytics-build.properties
 
 CompGraphicsTask/Temp/UnityLockfile
+RaceTrack/Temp/UnityLockfile
+*.psd
+Terrain/Library/Artifacts/de/de5de9e9f6c1bca2813d2acb0632cefb
+*.7z

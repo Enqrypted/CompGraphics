@@ -23,6 +23,8 @@ public class Track : MonoBehaviour
     [SerializeField]
     private float barrierWidth = 0.6f;
 
+    [SerializeField]
+    private int checkpointCount = 5;
 
     [SerializeField]
     private int quadCount = 300;
@@ -42,19 +44,22 @@ public class Track : MonoBehaviour
     private Vector2 varianceStep = new Vector2(0.01f, 0.01f);
     //
 
+    private int finishIndex = 0;
+
     private MeshGenerator meshGenerator;
 
     // Start is called before the first frame update
     void Start()
-    {    
-        
+    {
+        finishIndex = Random.Range(1, quadCount);
+        varianceOffset = new Vector2(Random.Range(1000,5000), Random.Range(1000, 5000));
+        RenderTrack();
     }
 
     // Update is called once per frame
     void Update()
     {
-        varianceOffset.y += Time.deltaTime;
-        RenderTrack();
+        
     }
 
     private void RenderTrack(){
@@ -128,12 +133,14 @@ public class Track : MonoBehaviour
             barrierSubmeshIndex = 0;
         }
 
+        bool addCheckpoint = (quadIndex % (quadCount / checkpointCount) == 0);
+
         CreateQuad(prevQuad, currQuad, nextQuad, markerSubmeshIndex, offset, targetOffset);
 
         //create the road
         offset += targetOffset;
         targetOffset = Vector3.forward * roadWidth;
-        CreateQuad(prevQuad, currQuad, nextQuad, 1, offset, targetOffset);
+        CreateQuad(prevQuad, currQuad, nextQuad, 1, offset, targetOffset, addCheckpoint, (finishIndex == quadIndex));
 
         //create the barrier
         offset += targetOffset;
@@ -162,8 +169,13 @@ public class Track : MonoBehaviour
 
     }
 
+    //returns the mid point between two vectors
+    private Vector3 midPoint(Vector3 a, Vector3 b) {
+        return a + (b - a) / 2;
+    }
+
     private void CreateQuad(Vector3 prevQuad, Vector3 currQuad, Vector3 nextQuad, 
-                            int submesh, Vector3 offset, Vector3 targetOffset){
+                            int submesh, Vector3 offset, Vector3 targetOffset, bool addCheckpoint = false, bool isFinish = false){
         //right Side
         Vector3 nextDirection = (nextQuad - currQuad).normalized;
         Vector3 prevDirection = (currQuad - prevQuad).normalized;
@@ -176,6 +188,8 @@ public class Track : MonoBehaviour
 
         Vector3 bottomLeftPoint = nextQuad + (nextQuaternion * offset);
         Vector3 bottomRightPoint = nextQuad + (nextQuaternion * (offset + targetOffset));
+
+        Vector3 rightSidePos = midPoint(topLeftPoint, bottomRightPoint);
 
         meshGenerator.CreateTriangle(topLeftPoint, topRightPoint, bottomLeftPoint, submesh);
         meshGenerator.CreateTriangle(topRightPoint, bottomRightPoint, bottomLeftPoint, submesh);
@@ -190,8 +204,20 @@ public class Track : MonoBehaviour
         bottomLeftPoint = nextQuad + (nextQuaternion * offset);
         bottomRightPoint = nextQuad + (nextQuaternion * (offset + targetOffset));
 
+        Vector3 leftSidePos = midPoint(topLeftPoint, bottomRightPoint);
+
         meshGenerator.CreateTriangle(bottomLeftPoint, bottomRightPoint, topLeftPoint, submesh);
         meshGenerator.CreateTriangle(bottomRightPoint, topRightPoint, topLeftPoint, submesh);
+
+        if (isFinish) {
+            Instantiate((GameObject)Resources.Load("Finish"), midPoint(rightSidePos, leftSidePos) + new Vector3(0, 2, 0), Quaternion.identity).name = "Finish";
+            Instantiate((GameObject)Resources.Load("Car"), midPoint(rightSidePos, leftSidePos) + new Vector3(0, 2, 0), Quaternion.identity).name = "Car";
+        }
+
+        if (addCheckpoint) {
+
+            Instantiate((GameObject)Resources.Load("Checkpoint"), midPoint(rightSidePos, leftSidePos) + new Vector3(0, 2, 0), Quaternion.identity).name = "Checkpoint";
+        }
 
     }
 
